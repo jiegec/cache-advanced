@@ -14,11 +14,14 @@ size_t log2(size_t num) {
   return res;
 }
 
-Cache::Cache(size_t block_size, size_t assoc, Algorithm algo,
+Cache::Cache(size_t block_size, size_t assoc,
+             ReplacementAlgorithm replacement_algo,
+             WayPredictionAlgorithm way_prediction_algo,
              WriteHitPolicy hit_policy, WriteMissPolicy miss_policy) {
   this->block_size = block_size;
   this->assoc = assoc;
-  this->algo = algo;
+  this->replacement_algo = replacement_algo;
+  this->way_prediction_algo = way_prediction_algo;
   this->hit_policy = hit_policy;
   this->miss_policy = miss_policy;
 
@@ -31,6 +34,7 @@ Cache::Cache(size_t block_size, size_t assoc, Algorithm algo,
   this->all_cachelines.resize(this->num_set * this->assoc, CacheLine());
   this->num_hit = 0;
   this->num_miss = 0;
+  this->num_way_prediction_first_hit = 0;
 }
 
 Cache::~Cache() {}
@@ -85,11 +89,22 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
   } else {
     fprintf(info, "Write Miss Policy: Write Non-allocate\n");
   }
-  if (algo == Algorithm::LRU) {
+
+  if (replacement_algo == ReplacementAlgorithm::LRU) {
     fprintf(info, "Replacement Algorithm: LRU\n");
     this->lru_state.resize(num_set, LRUState(this->assoc_lg2));
   } else {
     printf("Unknown replacement algorithm\n");
+    exit(1);
+  }
+
+  if (way_prediction_algo == WayPredictionAlgorithm::None) {
+    fprintf(info, "Way Prediction Algorithm: None\n");
+  } else if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
+    fprintf(info, "Way Prediction Algorithm: MRU\n");
+    this->mru_state.resize(num_set, 0);
+  } else {
+    printf("Unknown way prediction algorithm\n");
     exit(1);
   }
 
@@ -101,10 +116,22 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
     }
   }
 
-  fprintf(info, "Stats: %ld hit, %ld miss, %.2f%% hit rate, %.2f%% miss rate",
-          this->num_hit, this->num_miss,
-          100.0 * (this->num_hit) / (this->num_hit + this->num_miss),
-          100.0 * (this->num_miss) / (this->num_hit + this->num_miss));
+  fprintf(info, "Memory access: %ld\n", traces.size());
+  fprintf(info, "Hit: %ld\n", this->num_hit);
+  fprintf(info, "Hit Rate: %.2f%%\n", 100.0 * (this->num_hit) / traces.size());
+  fprintf(info, "Miss: %ld\n", this->num_miss);
+  fprintf(info, "Miss Rate: %.2f%%\n",
+          100.0 * (this->num_miss) / traces.size());
+  if (way_prediction_algo != WayPredictionAlgorithm::None) {
+    fprintf(info, "Way Prediction First Hit: %ld\n",
+            num_way_prediction_first_hit);
+    fprintf(info, "Way Prediction First Hit Rate: %.2f%%\n",
+            100.0 * num_way_prediction_first_hit / num_hit);
+    fprintf(info, "Way Prediction Non-First Hit: %ld\n",
+            num_hit - num_way_prediction_first_hit);
+    fprintf(info, "Way Prediction Non-First Hit Rate: %.2f%%\n",
+            100.0 * (num_hit - num_way_prediction_first_hit) / num_hit);
+  }
   assert(this->num_hit + this->num_miss == traces.size());
 }
 
@@ -121,8 +148,15 @@ void Cache::read(const Trace &access) {
       num_hit++;
 
       // update state
-      if (algo == Algorithm::LRU) {
+      if (replacement_algo == ReplacementAlgorithm::LRU) {
         this->lru_state[index].hit(i);
+      }
+
+      if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
+        if (i == this->mru_state[index]) {
+          num_way_prediction_first_hit++;
+        }
+        this->mru_state[index] = i;
       }
       return;
     }
@@ -133,7 +167,7 @@ void Cache::read(const Trace &access) {
   num_miss++;
 
   size_t victim = 0;
-  if (algo == Algorithm::LRU) {
+  if (replacement_algo == ReplacementAlgorithm::LRU) {
     // get victim from last element
     victim = this->lru_state[index].victim();
     // hit it to put it on top

@@ -9,7 +9,8 @@
 #include <vector>
 
 enum Kind { Read, Write };
-enum Algorithm { LRU };
+enum ReplacementAlgorithm { LRU };
+enum WayPredictionAlgorithm { None, MRU };
 enum WriteHitPolicy { Writethrough, Writeback };
 enum WriteMissPolicy { WriteAllocate, WriteNonAllocate };
 
@@ -81,13 +82,15 @@ private:
   size_t tag_width;      // 64 - num_set_lg2 - block_size_lg2
 
   // algorithm and policy
-  Algorithm algo;
+  ReplacementAlgorithm replacement_algo;
+  WayPredictionAlgorithm way_prediction_algo;
   WriteHitPolicy hit_policy;
   WriteMissPolicy miss_policy;
 
   // statistics and output
   size_t num_hit;
   size_t num_miss;
+  size_t num_way_prediction_first_hit;
   FILE *trace;
   FILE *info;
 
@@ -98,12 +101,16 @@ private:
   // LRU specific: num_set elements
   std::vector<LRUState> lru_state;
 
+  // MRU specific: num_set elements
+  std::vector<uint32_t> mru_state;
+
   void read(const Trace &access);
   void write(const Trace &access);
 
 public:
-  Cache(size_t block_size, size_t assoc, Algorithm algo,
-        WriteHitPolicy hit_policy, WriteMissPolicy miss_policy);
+  Cache(size_t block_size, size_t assoc, ReplacementAlgorithm algo,
+        WayPredictionAlgorithm way_prediction_algo, WriteHitPolicy hit_policy,
+        WriteMissPolicy miss_policy);
   ~Cache();
 
   void run(const std::vector<Trace> &traces, FILE *trace, FILE *info);
