@@ -118,6 +118,7 @@ private:
   size_t num_hit;
   size_t num_miss;
   size_t num_way_prediction_first_hit;
+  size_t num_multi_column_bit_vector_search_length;
   FILE *trace;
   FILE *info;
 

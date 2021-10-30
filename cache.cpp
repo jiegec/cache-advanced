@@ -35,6 +35,7 @@ Cache::Cache(size_t block_size, size_t assoc,
   this->num_hit = 0;
   this->num_miss = 0;
   this->num_way_prediction_first_hit = 0;
+  this->num_multi_column_bit_vector_search_length = 0;
 }
 
 Cache::~Cache() {}
@@ -134,6 +135,11 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
             num_hit - num_way_prediction_first_hit);
     fprintf(info, "Way Prediction Non-First Hit Rate: %.2f%%\n",
             100.0 * (num_hit - num_way_prediction_first_hit) / num_hit);
+    if (way_prediction_algo == WayPredictionAlgorithm::MultiColumn) {
+      fprintf(info, "Multi Column Bit Vector Search Length: %.2f\n",
+              (double)num_multi_column_bit_vector_search_length /
+                  traces.size());
+    }
   }
   assert(this->num_hit + this->num_miss == traces.size());
 }
@@ -181,6 +187,16 @@ void Cache::read(const Trace &access) {
           } else {
             assert(false);
           }
+
+          // compute bit vector search length
+          uint32_t bit_mask =
+              this->multi_column_state[index].bit_vec[major_location];
+          for (int j = 0; j <= i; j++) {
+            // major_location is not searched
+            if (bit_mask & (1 << j) && j != major_location) {
+              num_multi_column_bit_vector_search_length++;
+            }
+          }
         }
       }
       return;
@@ -209,6 +225,15 @@ void Cache::read(const Trace &access) {
     // no match
     // e.g. major_location = 0
     // bit vector = 1 0 0 0
+
+    // compute bit vector search length
+    uint32_t bit_mask = this->multi_column_state[index].bit_vec[major_location];
+    for (int j = 0; j < (1 << assoc_lg2); j++) {
+      // major_location is not searched
+      if (bit_mask & (1 << j) && j != major_location) {
+        num_multi_column_bit_vector_search_length++;
+      }
+    }
 
     // remove victim from bit_vector first
     for (int i = 0; i < this->multi_column_state[index].n; i++) {
