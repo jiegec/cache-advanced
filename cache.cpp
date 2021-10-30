@@ -101,8 +101,9 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
     }
   }
 
-  fprintf(info, "Stats: %ld hit, %ld miss, %.2f%% miss rate", this->num_hit,
-          this->num_miss,
+  fprintf(info, "Stats: %ld hit, %ld miss, %.2f%% hit rate, %.2f%% miss rate",
+          this->num_hit, this->num_miss,
+          100.0 * (this->num_hit) / (this->num_hit + this->num_miss),
           100.0 * (this->num_miss) / (this->num_hit + this->num_miss));
   assert(this->num_hit + this->num_miss == traces.size());
 }
