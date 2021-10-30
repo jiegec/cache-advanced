@@ -154,7 +154,7 @@ void Cache::read(const Trace &access) {
   for (size_t i = 0; i < assoc; i++) {
     if (cacheline[i].get_valid() && cacheline[i].get_tag() == tag) {
       // hit
-      fprintf(trace, "Hit at 0x%08llx\n", access.addr);
+      // fprintf(trace, "Hit at 0x%08llx\n", access.addr);
       num_hit++;
 
       // update state

@@ -92,6 +92,21 @@ int main(int argc, char *argv[]) {
         WayPredictionAlgorithm::MultiColumn, hit, miss, assoc);
   }
 
+  // task6
+  // assoc = 4
+  // block size = 8 16 32 64 128 256
+  for (auto block_size : {
+           (size_t)8,
+           (size_t)16,
+           (size_t)32,
+           (size_t)64,
+           (size_t)128,
+           (size_t)256,
+       }) {
+    run(traces, threads, argv, 6, block_size, replacement_algo,
+        way_prediction_algo, hit, miss, 4);
+  }
+
   for (auto &thread : threads) {
     thread.join();
   }
