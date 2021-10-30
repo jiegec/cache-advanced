@@ -103,6 +103,9 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
   } else if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
     fprintf(info, "Way Prediction Algorithm: MRU\n");
     this->mru_state.resize(num_set, 0);
+  } else if (way_prediction_algo == WayPredictionAlgorithm::MultiColumn) {
+    fprintf(info, "Way Prediction Algorithm: Multi Column\n");
+    this->multi_column_state.resize(num_set, MultiColumnState(this->assoc_lg2));
   } else {
     printf("Unknown way prediction algorithm\n");
     exit(1);
@@ -138,6 +141,7 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
 void Cache::read(const Trace &access) {
   uint64_t tag = (access.addr >> num_set_lg2) >> block_size_lg2;
   uint64_t index = (access.addr >> block_size_lg2) & (num_set - 1);
+  uint64_t major_location = tag & (assoc - 1); // for Multi Column
   CacheLine *cacheline = &all_cachelines[index * assoc];
 
   // find matching cacheline
@@ -150,6 +154,8 @@ void Cache::read(const Trace &access) {
       // update state
       if (replacement_algo == ReplacementAlgorithm::LRU) {
         this->lru_state[index].hit(i);
+      } else {
+        assert(false);
       }
 
       if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
@@ -157,6 +163,25 @@ void Cache::read(const Trace &access) {
           num_way_prediction_first_hit++;
         }
         this->mru_state[index] = i;
+      } else if (way_prediction_algo == WayPredictionAlgorithm::MultiColumn) {
+        // e.g. major_location = 0
+        // bit vector[3:0] = 1 0 0 1
+        if (i == major_location) {
+          // first hit
+          num_way_prediction_first_hit++;
+        } else {
+          // non first hit e.g. i = 3
+          // swap cacheline[0] and cacheline[3]
+          // so that next time will match at major_location
+          std::swap(cacheline[i], cacheline[major_location]);
+
+          // also swap in LRU
+          if (replacement_algo == ReplacementAlgorithm::LRU) {
+            this->lru_state[index].swap(i, major_location);
+          } else {
+            assert(false);
+          }
+        }
       }
       return;
     }
@@ -174,13 +199,37 @@ void Cache::read(const Trace &access) {
     this->lru_state[index].hit(victim);
   }
 
-  if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
-    this->mru_state[index] = victim;
-  }
-
   cacheline[victim].set_valid(true);
   cacheline[victim].set_dirty(false);
   cacheline[victim].set_tag(tag);
+
+  if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
+    this->mru_state[index] = victim;
+  } else if (way_prediction_algo == WayPredictionAlgorithm::MultiColumn) {
+    // no match
+    // e.g. major_location = 0
+    // bit vector = 1 0 0 0
+
+    // remove victim from bit_vector first
+    for (int i = 0; i < this->multi_column_state[index].n; i++) {
+      this->multi_column_state[index].bit_vec[i] &= ~(1 << victim);
+    }
+
+    // add victim to current bit_vector
+    this->multi_column_state[index].bit_vec[major_location] |= (1 << victim);
+
+    // swap to major_location
+    if (victim != major_location) {
+      std::swap(cacheline[victim], cacheline[major_location]);
+
+      // also swap in LRU
+      if (replacement_algo == ReplacementAlgorithm::LRU) {
+        this->lru_state[index].swap(victim, major_location);
+      } else {
+        assert(false);
+      }
+    }
+  }
 }
 
 void Cache::write(const Trace &access) {

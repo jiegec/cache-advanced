@@ -79,6 +79,19 @@ int main(int argc, char *argv[]) {
         WayPredictionAlgorithm::MRU, hit, miss, assoc);
   }
 
+  // task 4
+  // assoc = 2,4,8,16
+  // way prediction algo = MultiColumn
+  for (auto assoc : {
+           (size_t)2,
+           (size_t)4,
+           (size_t)8,
+           (size_t)16,
+       }) {
+    run(traces, threads, argv, 4, block_size, replacement_algo,
+        WayPredictionAlgorithm::MultiColumn, hit, miss, assoc);
+  }
+
   for (auto &thread : threads) {
     thread.join();
   }

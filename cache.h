@@ -3,6 +3,7 @@
 
 // for assert in release mode
 #undef NDEBUG
+#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 
 enum Kind { Read, Write };
 enum ReplacementAlgorithm { LRU };
-enum WayPredictionAlgorithm { None, MRU };
+enum WayPredictionAlgorithm { None, MRU, MultiColumn };
 enum WriteHitPolicy { Writethrough, Writeback };
 enum WriteMissPolicy { WriteAllocate, WriteNonAllocate };
 
@@ -59,12 +60,38 @@ struct LRUState {
     assert(false);
   }
 
+  // swap two blocks
+  void swap(uint64_t a, uint64_t b) {
+    assert(0 <= a && a < n);
+    assert(0 <= b && b < n);
+    assert(a != b);
+    for (size_t j = 0; j < n; j++) {
+      if (array[j] == a) {
+        array[j] = b;
+      } else if (array[j] == b) {
+        array[j] = a;
+      }
+    }
+  }
+
   LRUState(size_t assoc_lg2) {
     n = 1 << assoc_lg2;
     // initialize to: n-1, n-2, ..., 0
     for (size_t i = 0; i < n; i++) {
       array.push_back(n - i - 1);
     }
+  }
+};
+
+struct MultiColumnState {
+  std::vector<uint32_t> bit_vec;
+  // n-ways
+  int n;
+
+  MultiColumnState(size_t assoc_lg2) {
+    n = 1 << assoc_lg2;
+    // initialize to: all zeros
+    bit_vec.resize(n);
   }
 };
 
@@ -103,6 +130,9 @@ private:
 
   // MRU specific: num_set elements
   std::vector<uint32_t> mru_state;
+
+  // Multi Column specific: num_set elements
+  std::vector<MultiColumnState> multi_column_state;
 
   void read(const Trace &access);
   void write(const Trace &access);
