@@ -174,6 +174,10 @@ void Cache::read(const Trace &access) {
     this->lru_state[index].hit(victim);
   }
 
+  if (way_prediction_algo == WayPredictionAlgorithm::MRU) {
+    this->mru_state[index] = victim;
+  }
+
   cacheline[victim].set_valid(true);
   cacheline[victim].set_dirty(false);
   cacheline[victim].set_tag(tag);
