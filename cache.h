@@ -36,7 +36,7 @@ struct CacheLine {
 };
 
 struct LRUState {
-  std::vector<uint8_t> array;
+  std::vector<uint32_t> array;
   // n-ways
   int n;
 

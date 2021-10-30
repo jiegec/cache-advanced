@@ -116,7 +116,7 @@ void Cache::read(const Trace &access) {
   for (size_t i = 0; i < assoc; i++) {
     if (cacheline[i].get_valid() && cacheline[i].get_tag() == tag) {
       // hit
-      fprintf(trace, "Hit\n");
+      fprintf(trace, "Hit at 0x%08llx\n", access.addr);
       num_hit++;
 
       // update state
@@ -128,7 +128,7 @@ void Cache::read(const Trace &access) {
   }
 
   // miss
-  fprintf(trace, "Miss\n");
+  fprintf(trace, "Miss at 0x%08llx\n", access.addr);
   num_miss++;
 
   size_t victim = 0;
@@ -171,7 +171,7 @@ void Cache::write(const Trace &access) {
   if (miss_policy == WriteMissPolicy::WriteNonAllocate) {
     // write non-allocate
     // just write, do nothing for no data
-    fprintf(trace, "Miss\n");
+    fprintf(trace, "Miss at 0x%08llx\n", access.addr);
     num_miss++;
   } else {
     // write allocate

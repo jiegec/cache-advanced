@@ -1,6 +1,28 @@
 #include "cache.h"
-
+#include <assert.h>
 #include <thread>
+
+void run(std::vector<Trace> &traces, std::vector<std::thread> &threads,
+         char *argv[], int task, size_t block_size, Algorithm algo,
+         WriteHitPolicy hit, WriteMissPolicy miss, size_t assoc) {
+  threads.push_back(std::thread([=] {
+    char buffer[1024];
+    Cache cache(block_size, assoc, algo, hit, miss);
+
+    sprintf(buffer, "%s_task%d_%zu_%zu.trace", argv[1], task, block_size,
+            assoc);
+    printf("Writing to %s\n", buffer);
+    FILE *trace = fopen(buffer, "w");
+    assert(trace);
+
+    sprintf(buffer, "%s_task%d_%zu_%zu.info", argv[1], task, block_size, assoc);
+    FILE *info = fopen(buffer, "w");
+    assert(info);
+    cache.run(traces, trace, info);
+    fclose(trace);
+    fclose(info);
+  }));
+}
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
@@ -17,36 +39,25 @@ int main(int argc, char *argv[]) {
   std::vector<Trace> traces = readTrace(fp);
 
   std::vector<std::thread> threads;
-  for (size_t block_size : {8, 32, 64}) {
-    for (Algorithm algo : {Algorithm::LRU}) {
-      for (WriteHitPolicy hit : {WriteHitPolicy::Writeback}) {
-        for (WriteMissPolicy miss : {WriteMissPolicy::WriteAllocate,
-                                     WriteMissPolicy::WriteNonAllocate}) {
-          for (size_t assoc :
-               {cache_size / block_size, (size_t)1, (size_t)4, (size_t)8}) {
 
-            threads.push_back(std::thread([=] {
-              char buffer[1024];
-              Cache cache(block_size, assoc, algo, hit, miss);
+  // default settings
+  size_t block_size = 64;
+  Algorithm algo = Algorithm::LRU;
+  WriteHitPolicy hit = WriteHitPolicy::Writeback;
+  WriteMissPolicy miss = WriteMissPolicy::WriteAllocate;
 
-              sprintf(buffer, "%s_%zu_%d_%d_%d_%zu.trace", argv[1], block_size,
-                      algo, hit, miss, assoc);
-              printf("Writing to %s\n", buffer);
-              FILE *trace = fopen(buffer, "w");
-              assert(trace);
+  // task 1
+  run(traces, threads, argv, 1, block_size, algo, hit, miss, 1);
 
-              sprintf(buffer, "%s_%zu_%d_%d_%d_%zu.info", argv[1], block_size,
-                      algo, hit, miss, assoc);
-              FILE *info = fopen(buffer, "w");
-              assert(info);
-              cache.run(traces, trace, info);
-              fclose(trace);
-              fclose(info);
-            }));
-          }
-        }
-      }
-    }
+  // task 2
+  // assoc = 2,4,8,16
+  for (auto assoc : {
+           (size_t)2,
+           (size_t)4,
+           (size_t)8,
+           (size_t)16,
+       }) {
+    run(traces, threads, argv, 2, block_size, algo, hit, miss, assoc);
   }
 
   for (auto &thread : threads) {
