@@ -17,11 +17,14 @@ size_t log2(size_t num) {
 Cache::Cache(size_t block_size, size_t assoc,
              ReplacementAlgorithm replacement_algo,
              WayPredictionAlgorithm way_prediction_algo,
-             WriteHitPolicy hit_policy, WriteMissPolicy miss_policy) {
+             size_t victim_cache_size, WriteHitPolicy hit_policy,
+             WriteMissPolicy miss_policy)
+    : victim_cache_state(victim_cache_size) {
   this->block_size = block_size;
   this->assoc = assoc;
   this->replacement_algo = replacement_algo;
   this->way_prediction_algo = way_prediction_algo;
+  this->victim_cache_size = victim_cache_size;
   this->hit_policy = hit_policy;
   this->miss_policy = miss_policy;
 
@@ -110,6 +113,10 @@ void Cache::run(const std::vector<Trace> &traces, FILE *trace, FILE *info) {
   } else {
     printf("Unknown way prediction algorithm\n");
     exit(1);
+  }
+
+  if (victim_cache_size) {
+    fprintf(info, "Victim Cache Size: %zu\n", victim_cache_size);
   }
 
   for (const Trace &access : traces) {
@@ -203,6 +210,41 @@ void Cache::read(const Trace &access) {
     }
   }
 
+  // find in victim cache
+  if (victim_cache_size) {
+    size_t tag_index = access.addr >> block_size_lg2;
+    for (int i = 0; i < victim_cache_size; i++) {
+      if (victim_cache_state.data[i].get_valid() &&
+          victim_cache_state.data[i].get_tag() == tag_index) {
+        // found
+        num_hit++;
+
+        // move to cache
+        victim_cache_state.data[i].set_valid(false);
+        size_t victim = 0;
+        if (replacement_algo == ReplacementAlgorithm::LRU) {
+          // get victim from last element
+          victim = this->lru_state[index].victim();
+          // hit it to put it on top
+          this->lru_state[index].hit(victim);
+        }
+
+        if (cacheline[victim].get_valid()) {
+          // move to victim cache
+          victim_cache_state.data[i].set_valid(true);
+          victim_cache_state.data[i].set_tag(
+              (cacheline[victim].get_tag() << num_set_lg2) | index);
+          victim_cache_state.hit(i);
+        }
+
+        cacheline[victim].set_valid(true);
+        cacheline[victim].set_dirty(false);
+        cacheline[victim].set_tag(tag);
+        return;
+      }
+    }
+  }
+
   // miss
   fprintf(trace, "Miss at 0x%08llx\n", access.addr);
   num_miss++;
@@ -213,6 +255,15 @@ void Cache::read(const Trace &access) {
     victim = this->lru_state[index].victim();
     // hit it to put it on top
     this->lru_state[index].hit(victim);
+  }
+
+  // move victim to victim cache
+  if (victim_cache_size && cacheline[victim].get_valid()) {
+    int i = victim_cache_state.lru.back();
+    victim_cache_state.data[i].set_valid(true);
+    victim_cache_state.data[i].set_tag(
+        (cacheline[victim].get_tag() << num_set_lg2) | index);
+    victim_cache_state.hit(i);
   }
 
   cacheline[victim].set_valid(true);
@@ -262,10 +313,12 @@ void Cache::write(const Trace &access) {
   uint64_t index = (access.addr >> block_size_lg2) & (num_set - 1);
   CacheLine *cacheline = &all_cachelines[index * assoc];
 
+  bool hit = false;
   // find matching cacheline
   for (size_t i = 0; i < assoc; i++) {
     if (cacheline[i].get_valid() && cacheline[i].get_tag() == tag) {
       // hit
+      hit = true;
       if (hit_policy == WriteHitPolicy::Writethrough) {
         // write through
         // do nothing because we don't store data
@@ -273,11 +326,25 @@ void Cache::write(const Trace &access) {
         // write back
         cacheline[i].set_dirty(true);
       }
-
-      // avoid code duplication
-      read(access);
-      return;
     }
+  }
+
+  // check victim cache
+  if (victim_cache_size) {
+    size_t tag_index = access.addr >> block_size_lg2;
+    for (int i = 0; i < victim_cache_size; i++) {
+      if (victim_cache_state.data[i].get_valid() &&
+          victim_cache_state.data[i].get_tag() == tag_index) {
+        hit = true;
+        break;
+      }
+    }
+  }
+
+  if (hit) {
+    // avoid code duplication
+    read(access);
+    return;
   }
 
   // miss

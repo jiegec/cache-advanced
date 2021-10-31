@@ -95,6 +95,38 @@ struct MultiColumnState {
   }
 };
 
+struct VictimCacheState {
+  std::vector<CacheLine> data;
+  std::vector<uint32_t> lru;
+  // n-ways
+  int n;
+
+  // move i to the first of lru
+  void hit(uint64_t i) {
+    uint64_t last = i;
+    for (size_t j = 0; j < n; j++) {
+      uint64_t item = lru[j];
+      lru[j] = last;
+      last = item;
+      if (item == i) {
+        // found
+        return;
+      }
+    }
+    // unreachable
+    assert(false);
+  }
+
+  VictimCacheState(size_t victim_cache_size) {
+    n = victim_cache_size;
+    data.resize(n);
+    // initialize to: n-1, n-2, ..., 0
+    for (size_t i = 0; i < n; i++) {
+      lru.push_back(n - i - 1);
+    }
+  }
+};
+
 class Cache {
 private:
   // cache parameters
@@ -111,6 +143,7 @@ private:
   // algorithm and policy
   ReplacementAlgorithm replacement_algo;
   WayPredictionAlgorithm way_prediction_algo;
+  size_t victim_cache_size; // size=0 means disabled
   WriteHitPolicy hit_policy;
   WriteMissPolicy miss_policy;
 
@@ -135,13 +168,16 @@ private:
   // Multi Column specific: num_set elements
   std::vector<MultiColumnState> multi_column_state;
 
+  // Victim Cache specific: victim_cache_size elements
+  VictimCacheState victim_cache_state;
+
   void read(const Trace &access);
   void write(const Trace &access);
 
 public:
   Cache(size_t block_size, size_t assoc, ReplacementAlgorithm algo,
-        WayPredictionAlgorithm way_prediction_algo, WriteHitPolicy hit_policy,
-        WriteMissPolicy miss_policy);
+        WayPredictionAlgorithm way_prediction_algo, size_t victim_cache_size,
+        WriteHitPolicy hit_policy, WriteMissPolicy miss_policy);
   ~Cache();
 
   void run(const std::vector<Trace> &traces, FILE *trace, FILE *info);
